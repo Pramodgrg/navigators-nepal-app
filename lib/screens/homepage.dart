@@ -262,21 +262,122 @@ class _HomePageState extends State<HomePage> {
     },
   ];
 
-  // Calculate total item count including headers
+  // Search related variables
+  final TextEditingController _searchController = TextEditingController();
+  List<Map<String, dynamic>> _filteredCategories = [];
+  bool _isSearchActive = false;
+  String _searchQuery = '';
+  final FocusNode _searchFocusNode = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _filteredCategories = List.from(_categories);
+    _searchController.addListener(_onSearchChanged);
+
+    // Listen to focus changes
+    _searchFocusNode.addListener(() {
+      setState(() {
+        _isSearchActive = _searchFocusNode.hasFocus || _searchQuery.isNotEmpty;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged() {
+    setState(() {
+      _searchQuery = _searchController.text.trim();
+      _filterCategories();
+      _isSearchActive = _searchFocusNode.hasFocus || _searchQuery.isNotEmpty;
+    });
+  }
+
+  void _filterCategories() {
+    if (_searchQuery.isEmpty) {
+      _filteredCategories = List.from(_categories);
+      return;
+    }
+
+    final query = _searchQuery.toLowerCase();
+    _filteredCategories = [];
+
+    for (var category in _categories) {
+      final categoryTitle = category['title'].toString().toLowerCase();
+      final topics = category['topics'] as List;
+      final List<Map<String, dynamic>> filteredTopics = [];
+
+      // Filter topics within this category
+      for (var topic in topics) {
+        final topicTitle = topic['title'].toString().toLowerCase();
+        final verse = topic['verse'].toString().toLowerCase();
+
+        // Check if search query matches topic title, verse, or category title
+        if (topicTitle.contains(query) ||
+            verse.contains(query) ||
+            categoryTitle.contains(query)) {
+          filteredTopics.add(Map<String, dynamic>.from(topic));
+        }
+      }
+
+      // Only add category if it has matching topics or category name matches
+      if (filteredTopics.isNotEmpty || categoryTitle.contains(query)) {
+        _filteredCategories.add({
+          'title': category['title'],
+          'topics': filteredTopics.isNotEmpty ? filteredTopics : topics,
+        });
+      }
+    }
+  }
+
+  void _clearSearch() {
+    setState(() {
+      _searchController.clear();
+      _searchQuery = '';
+      _filteredCategories = List.from(_categories);
+      _isSearchActive = false;
+      _searchFocusNode.unfocus();
+    });
+  }
+
+  void _activateSearch() {
+    setState(() {
+      _isSearchActive = true;
+    });
+    Future.delayed(const Duration(milliseconds: 50), () {
+      _searchFocusNode.requestFocus();
+    });
+  }
+
+  void _deactivateSearch() {
+    if (_searchQuery.isEmpty) {
+      setState(() {
+        _isSearchActive = false;
+      });
+      _searchFocusNode.unfocus();
+    }
+  }
+
+  // Calculate total item count including headers for filtered categories
   int get _totalItemCount {
     int count = 0;
-    for (var category in _categories) {
+    for (var category in _filteredCategories) {
       count += 1; // Header
       count += (category['topics'] as List).length; // Topic items
     }
     return count;
   }
 
-  // Get item type and data based on index
+  // Get item type and data based on index for filtered categories
   dynamic _getItem(int index) {
     int currentIndex = 0;
 
-    for (var category in _categories) {
+    for (var category in _filteredCategories) {
       // Check if this index is the header
       if (index == currentIndex) {
         return {'type': 'header', 'title': category['title']};
@@ -304,68 +405,286 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: const Color.fromARGB(255, 6, 36, 67),
-        foregroundColor: Colors.white,
-        toolbarHeight: 100,
-        title: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // Precache the image
-            Image.asset(
-              'assets/images/logo.png',
-              height: 50,
-              width: 50,
-              fit: BoxFit.contain,
-              cacheWidth: 100,
-            ),
-            const Text(
-              'The Navigators Nepal',
-              style: TextStyle(fontWeight: FontWeight.w500, fontSize: 22),
-            ),
-          ],
+    return GestureDetector(
+      onTap: () {
+        FocusScope.of(context).unfocus();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          backgroundColor: const Color.fromARGB(255, 6, 36, 67),
+          foregroundColor: Colors.white,
+          toolbarHeight: 100,
+          title: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Precache the image
+              Image.asset(
+                'assets/images/logo.png',
+                height: 50,
+                width: 50,
+                fit: BoxFit.contain,
+                cacheWidth: 100,
+              ),
+              const Text(
+                'The Navigators Nepal',
+                style: TextStyle(fontWeight: FontWeight.w500, fontSize: 22),
+              ),
+            ],
+          ),
+          centerTitle: true,
         ),
-        centerTitle: true,
-      ),
-      body: ListView.builder(
-        key: const PageStorageKey<String>('home_page'), // Save scroll position
-        physics: const ClampingScrollPhysics(), // More stable physics
-        addAutomaticKeepAlives: true, // Keep widgets alive
-        addRepaintBoundaries: true, // Add repaint boundaries
-        itemCount: _totalItemCount,
-        itemBuilder: (context, index) {
-          final item = _getItem(index);
+        body: Column(
+          children: [
+            // Modern search bar placed just below app bar
+            _buildSearchBar(),
 
-          if (item == null) {
-            return const SizedBox.shrink();
-          }
-
-          if (item['type'] == 'header') {
-            return Container(
-              key: ValueKey('header_${item['title']}'),
-              padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 25),
-              alignment: Alignment.centerLeft,
-              child: Text(
-                item['title'],
-                style: const TextStyle(
-                  fontSize: 18,
-                  color: Colors.black38,
-                  fontWeight: FontWeight.w500,
+            // Search results summary (only shown when searching)
+            if (_searchQuery.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.blue[50],
+                  border: Border(bottom: BorderSide(color: Colors.blue[100]!)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      '${_getTotalTopics()} नतिजा फेला पर्यो',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        color: Colors.blue,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    // TextButton(
+                    //   onPressed: _clearSearch,
+                    //   child: const Text(
+                    //     'सबै हेर्नुहोस्',
+                    //     style: TextStyle(
+                    //       fontSize: 14,
+                    //       color: Colors.blue,
+                    //       fontWeight: FontWeight.w600,
+                    //     ),
+                    //   ),
+                    // ),
+                  ],
                 ),
               ),
-            );
-          } else {
-            final topicData = item['data'];
-            return buildTopicCard(
-              context,
-              topicData['title'],
-              topicData['verse'],
-              topicData['category'],
-            );
-          }
-        },
+            // Content list
+            Expanded(child: _buildContent()),
+          ],
+        ),
       ),
     );
+  }
+
+  Widget _buildContent() {
+    if (_searchQuery.isNotEmpty && _totalItemCount == 0) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(20.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.search_off_rounded, size: 80, color: Colors.grey[400]),
+              const SizedBox(height: 20),
+              Text(
+                '"$_searchQuery" को लागि कुनै नतिजा फेला परेन',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.grey[600],
+                  fontWeight: FontWeight.w500,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              // ElevatedButton(
+              //   onPressed: _clearSearch,
+              //   style: ElevatedButton.styleFrom(
+              //     backgroundColor: Colors.blue,
+              //     foregroundColor: Colors.white,
+              //     shape: RoundedRectangleBorder(
+              //       borderRadius: BorderRadius.circular(25),
+              //     ),
+              //     padding: const EdgeInsets.symmetric(
+              //       horizontal: 24,
+              //       vertical: 12,
+              //     ),
+              //   ),
+              //   child: const Text(
+              //     'सबै विषयहरू हेर्नुहोस्',
+              //     style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+              //   ),
+              // ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return ListView.builder(
+      key: PageStorageKey<String>('home_page_$_searchQuery'),
+      physics: const ClampingScrollPhysics(),
+      addAutomaticKeepAlives: true,
+      addRepaintBoundaries: true,
+      itemCount: _totalItemCount,
+      itemBuilder: (context, index) {
+        final item = _getItem(index);
+
+        if (item == null) {
+          return const SizedBox.shrink();
+        }
+
+        if (item['type'] == 'header') {
+          return Container(
+            key: ValueKey('header_${item['title']}_$_searchQuery'),
+            padding: const EdgeInsets.symmetric(horizontal: 25, vertical: 20),
+            alignment: Alignment.centerLeft,
+            child: Text(
+              item['title'],
+              style: TextStyle(
+                fontSize: 18,
+                color: _searchQuery.isNotEmpty ? Colors.blue : Colors.black38,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          );
+        } else {
+          final topicData = item['data'];
+          return buildTopicCard(
+            context,
+            topicData['title'],
+            topicData['verse'],
+            topicData['category'],
+          );
+        }
+      },
+    );
+  }
+
+  Widget _buildSearchBar() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      decoration: BoxDecoration(
+        color: const Color.fromARGB(255, 6, 36, 67),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            spreadRadius: 1,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: GestureDetector(
+        onTap: _activateSearch,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+          height: 56,
+          decoration: BoxDecoration(
+            color: _isSearchActive
+                ? Colors.white
+                : Color.fromARGB(255, 5, 31, 57),
+            borderRadius: BorderRadius.circular(28),
+            border: _isSearchActive
+                ? Border.all(color: Colors.blue, width: 2)
+                : Border.all(color: Colors.grey[300]!, width: 1.5),
+            boxShadow: _isSearchActive
+                ? [
+                    BoxShadow(
+                      color: Colors.blue.withValues(alpha: 0.15),
+                      blurRadius: 20,
+                      spreadRadius: 3,
+                      offset: const Offset(0, 5),
+                    ),
+                  ]
+                : [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 10,
+                      spreadRadius: 1,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+          ),
+          child: Row(
+            children: [
+              const SizedBox(width: 20),
+              Icon(
+                Icons.search_rounded,
+                color: _isSearchActive ? Colors.blue : Colors.white,
+                size: 24,
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: _isSearchActive
+                    ? TextField(
+                        controller: _searchController,
+                        focusNode: _searchFocusNode,
+                        autofocus: false,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          color: Colors.black87,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        decoration: InputDecoration(
+                          hintText: 'शीर्षक, पद वा श्रेणी खोज्नुहोस्...',
+                          hintStyle: TextStyle(
+                            color: Colors.grey[600],
+                            fontWeight: FontWeight.w400,
+                          ),
+                          border: InputBorder.none,
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                        onTap: () => _isSearchActive = true,
+                      )
+                    : Text(
+                        'खोज्नुहोस्...',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+              ),
+              if (_isSearchActive && _searchQuery.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(right: 12.0),
+                  child: GestureDetector(
+                    onTap: _clearSearch,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: Colors.redAccent,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.close_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  int _getTotalTopics() {
+    int count = 0;
+    for (var category in _filteredCategories) {
+      count += (category['topics'] as List).length;
+    }
+    return count;
   }
 }
