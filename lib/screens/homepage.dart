@@ -354,14 +354,14 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  void _deactivateSearch() {
-    if (_searchQuery.isEmpty) {
-      setState(() {
-        _isSearchActive = false;
-      });
-      _searchFocusNode.unfocus();
-    }
-  }
+  // void _deactivateSearch() {
+  //   if (_searchQuery.isEmpty) {
+  //     setState(() {
+  //       _isSearchActive = false;
+  //     });
+  //     _searchFocusNode.unfocus();
+  //   }
+  // }
 
   // Calculate total item count including headers for filtered categories
   int get _totalItemCount {
